@@ -1,0 +1,46 @@
+# https://docs.microsoft.com/azure/devops/pipelines/apps/windows/dot-net
+
+trigger:
+- main
+
+pr:
+- main
+
+pool:
+  name: mikeLaptopPool
+
+variables:
+  solution: 'pipeline.sln'
+  buildPlatform: 'Any CPU'
+  buildConfiguration: 'Release'
+  publishDir: '$(Build.ArtifactStagingDirectory)/publish'
+
+steps:
+- checkout: self
+
+- task: UseDotNet@2
+  inputs:
+    packageType: 'sdk'
+    version: '8.x'
+
+- script: dotnet restore "$(solution)"
+  displayName: Restore
+
+- script: dotnet build "$(solution)" -c "$(buildConfiguration)" -p:Platform="$(buildPlatform)"
+  displayName: Build
+
+- script: dotnet test "$(solution)" -c "$(buildConfiguration)" --logger "trx;LogFileName=test_results.trx"
+  displayName: Test (all)
+  continueOnError: false
+
+- script: dotnet publish "src/desktopapp/deskstopapp.csproj" -c "$(buildConfiguration)" -p:Platform="$(buildPlatform)" -o "$(publishDir)"
+  displayName: Publish
+
+# Publish artifact only for main branch (not PRs)
+- task: PublishBuildArtifacts@1
+  displayName: Publish artifact (drop)
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  inputs:
+    PathtoPublish: '$(publishDir)'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'

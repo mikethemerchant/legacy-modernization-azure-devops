@@ -1,0 +1,100 @@
+# azure-pipelines/cd-deploy.yml
+# Continuous Deployment Pipeline
+# Deploys previously built artifacts to UAT or PROD
+
+parameters:
+  - name: environmentName
+    displayName: "Deployment Environment"
+    type: string
+    default: "UAT"
+    values:
+      - UAT
+      - PROD
+
+pool:
+  name: mikeLaptopPool
+
+variables:
+  destUat1: '\\server1\apps\TEST\deskUAT'
+  destUat2: '\\server2\towapps\TEST\deskUAT'
+  destProd1: '\\server1\towapps\TEST\deskPROD'
+  destProd2: '\\server2\towapps\TEST\deskPROD'
+
+trigger: none
+pr: none
+
+resources:
+  pipelines:
+  - pipeline: ciBuild
+    source: ci-build-pipeline
+    trigger:
+      branches:
+        include:
+        - main
+
+stages:
+- stage: UAT
+  displayName: Deploy to UAT
+  jobs:
+  - deployment: UATDeploy
+    displayName: UAT deploy
+    environment: UAT
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: ciBuild
+            artifact: drop
+            displayName: Download artifact
+
+          - powershell: |
+              $src = "$(Pipeline.Workspace)\ciBuild\drop"
+              Write-Host "Source: $src"
+              if (-not (Test-Path $src)) { throw "Source does not exist: $src" }
+              Get-ChildItem -Recurse -Force $src | Select-Object FullName, Length | Format-Table | Out-String | Write-Host
+              $dsts = @("$(destUat1)", "$(destUat2)")
+              foreach ($dst in $dsts) {
+                Write-Host "Deploying to $dst"
+                $cmd = "robocopy `"$src`" `"$dst`" /MIR /R:3 /W:5 /NFL /NDL /NP /XO /FFT /Z /XA:SH /TEE /LOG:`"$(Pipeline.Workspace)\robocopy-uat.log`""
+                Write-Host $cmd
+                cmd /c $cmd
+                $code = $LASTEXITCODE
+                Write-Host "Robocopy exit code: $code"
+                if ($code -ge 8) { throw "Robocopy to $dst failed with exit code $code" }
+                $LASTEXITCODE = 0
+              }
+            displayName: Deploy to UAT shares
+
+- stage: PROD
+  displayName: Deploy to PROD (requires approval)
+  dependsOn: UAT
+  condition: succeeded()
+  jobs:
+  - deployment: ProdDeploy
+    displayName: PROD deploy
+    environment: PROD
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: ciBuild
+            artifact: drop
+            displayName: Download artifact
+
+          - powershell: |
+              $src = "$(Pipeline.Workspace)\ciBuild\drop"
+              Write-Host "Source: $src"
+              if (-not (Test-Path $src)) { throw "Source does not exist: $src" }
+              Get-ChildItem -Recurse -Force $src | Select-Object FullName, Length | Format-Table | Out-String | Write-Host
+              $dsts = @("$(destProd1)", "$(destProd2)")
+              foreach ($dst in $dsts) {
+                Write-Host "Deploying to $dst"
+                $cmd = "robocopy `"$src`" `"$dst`" /MIR /R:3 /W:5 /NFL /NDL /NP /XO /FFT /Z /XA:SH /TEE /LOG:`"$(Pipeline.Workspace)\robocopy-prod.log`""
+                Write-Host $cmd
+                cmd /c $cmd
+                $code = $LASTEXITCODE
+                Write-Host "Robocopy exit code: $code"
+                if ($code -ge 8) { throw "Robocopy to $dst failed with exit code $code" }
+                $LASTEXITCODE = 0
+              }
+            displayName: Deploy to PROD shares
