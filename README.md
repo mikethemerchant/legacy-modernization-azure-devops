@@ -5,6 +5,8 @@ This repository documents a real-world legacy application modernization effort f
 
 The goal was not a full rewrite, but to safely introduce source control, repeatable builds, and auditable deployments into a high-risk legacy environment.
 
+YouTube: https://youtu.be/0Tz0Gc5Js4M
+
 ---
 
 ## Problem
